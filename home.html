@@ -2,6 +2,27 @@
 <html>
   <head>
     <title>TCLocationDemo</title>
+
+    <style type="text/css">
+      html, body, #map-canvas { height: 100%; margin: 0; padding: 0;}
+    </style>
+    <script type="text/javascript"
+      src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB6-ay_rKPDExzkspgsl_wEUCR3_N0Ldc8">
+    </script>
+    <script type="text/javascript">
+        var map;
+
+      function initialize() {
+        var mapOptions = {
+          center: { lat: -34.397, lng: 150.644},
+          zoom: 14,
+          mapTypeId: 'roadmap'
+        };
+        map = new google.maps.Map(document.getElementById('map-canvas'),
+            mapOptions);
+      }
+      google.maps.event.addDomListener(window, 'load', initialize);
+    </script>
   </head>
   <body>
 
@@ -13,18 +34,153 @@
 <script>
 var socket = io();
 
-socket.on('notebooks', function(notebooks){
-	console.log(notebooks);
+var user;
+var notebooks = new Array();
+var notesByNotebook = new Array();
+var notes = new Array();
+var markers = new Array();
+
+
+socket.on('user', function(data){
+	console.log("user");
+	console.log(data);
+    user = data;
 });
 
-socket.on('notes', function(notes){
-	console.log(notes)
+socket.on('notebooks', function(data){
+    console.log("notebooks");
+	console.log(data);
+
+    for(var i=0; i<data.length; i++) {
+        var n = data[i];
+        console.log(n.guid);
+        notebooks[n.guid] = n;
+
+        $("#trips").append("<div id=\'"+ n.guid+"\'><h3" +
+        " onclick=\"selectTrip(\'"+ n.guid+"\')\">"+ n.name+"</h3><p style='' class='notes'></p></div>");
+    }
+
+    notebooks = data;
 });
+
+socket.on('notes', function(guid, data){
+    console.log("notes");
+	console.log(guid);
+	console.log(data);
+    notesByNotebook[guid] = data;
+
+    notebook = getNotebook(guid);
+    $("#"+guid+" .notes").append("<ol>");
+    for(var i=0; i<data.length; i++) {
+        note = data[i];
+        $("#"+guid+" .notes ol").append("<li onclick=\"selectNote(\'"+note.guid+"\')\">"+note.title+"</li>");
+    }
+});
+
+
+socket.on('note', function(data){
+    console.log("note detail");
+	console.log(data);
+    notes[data.guid] = data;
+});
+
+
+function getNotebook(guid) {
+    for(i in notebooks) {
+        if(notebooks[i].guid == guid) return notebooks[i];
+    }
+}
+
+function getNote(guid) {
+    for(i in notes) {
+        if(notes[i].guid == guid) return notes[i];
+    }
+}
+
+function getNodesFromNotebook(guid) {
+    var nn = new Array();
+
+    for(i in notes) {
+        if(notes[i].notebookGuid == guid) {nn.push(notes[i])};
+    }
+
+    return nn;
+}
+
+function selectTrip(guid) {
+
+    console.log("selected " + guid);
+
+    removeMarkers();
+
+    var nn = getNodesFromNotebook(guid);
+
+    var bounds = new google.maps.LatLngBounds();
+
+    for(var i=0; i<nn.length; i++) {
+        var note = nn[i];
+        console.log(note.title);
+
+        console.log("ADD MARKER " + note.attributes.latitude + " -- "  + note.attributes.longitude);
+        var myLatlng = new google.maps.LatLng(note.attributes.latitude, note.attributes.longitude);
+        console.log(myLatlng);
+        bounds.extend(myLatlng);
+        var mapOptions = {
+          zoom: 12,
+          center: myLatlng
+        };
+
+        // To add the marker to the map, use the 'map' property
+        var marker = new google.maps.Marker({
+            position: myLatlng,
+            map: map,
+            title: note.title,
+            animation: google.maps.Animation.DROP
+        });
+
+        markers.push(marker);
+    }
+
+    map.fitBounds(bounds);
+
+    var boundsListener = google.maps.event.addListener((map), 'bounds_changed', function(event) {
+        this.setZoom(14);
+        google.maps.event.removeListener(boundsListener);
+    });
+}
+
+
+function removeMarkers() {
+    for(var i=0; i<markers.length; i++) {
+        markers[i].setMap(null);
+    }
+    markers = new Array();
+}
+
+
+function selectNote(guid) {
+
+    console.log("selected " + guid);
+
+
+}
+
+
+
+    jQuery(function($) {
+    // Asynchronously Load the map API
+    var script = document.createElement('script');
+    script.src = "http://maps.googleapis.com/maps/api/js?sensor=false&callback=initialize";
+    document.body.appendChild(script);
+});
+
 </script>
 
-  <h1>TCLocationDemo</h1>
+  <div id="trips"></div>
 
-  <p><a href="/clear">Don't push da button</a></p>
+
+
+  <div id="map-canvas"></div>
 
   </body>
 </html>

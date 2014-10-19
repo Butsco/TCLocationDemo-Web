@@ -55,9 +55,34 @@ http.listen(8000, function(){
   console.log('listening on 8000');
 });
 
-
+//zk.user.info(function(err, info) {
+//  console.log(info);
+//});
+//
+//zk.notebooks.all(function(err, notebooks) {
+//  console.log(notebooks);
+//});
+//
+//zk.notes.inNotebook('c4017b21-0909-4f86-9f64-14ed406a0c18', function(err, notes) {
+//  console.log(notes);
+//});
 
 // home page
+var zk;
+var resultSpecOptions = {
+        includeTitle: true,
+        includeContentLength: true,
+        includeCreated: true,
+        includeUpdated: true,
+        includeDeleted: true,
+        includeUpdateSequenceNum: true,
+        includeNotebookGuid: true,
+        includeTagGuids: true,
+        includeAttributes: true,
+        includeLargestResourceMime: true,
+        includeLargestResourceSize: true
+      };
+
 routes_index = function(req, res) {
     try {
         var token = fs.readFileSync(__dirname + '/session.txt');
@@ -70,10 +95,50 @@ routes_index = function(req, res) {
 
   if(req.session.oauthAccessToken) {
     var token = req.session.oauthAccessToken;
-    var client = new Evernote.Client({
-      token: token,
-      sandbox: config.SANDBOX
+//    var client = new Evernote.Client({
+//      token: token,
+//      sandbox: config.SANDBOX
+//    });
+    zk = zookeeper({token: token});
+    console.log(token);
+
+    zk.user.info(function(err, user) {
+        req.session.user = user;
+        io.emit('user', user);
+//        console.log(user);
     });
+
+    zk.notebooks.all(function(err, notebooks) {
+      req.session.notebooks = notebooks;
+      io.emit('notebooks', notebooks);
+//      console.log(notebooks);
+
+        req.session.notes = new Array();
+
+        for(var i=0; i<notebooks.length; i++) {
+            var n = notebooks[i];
+            console.log("FIXING NOTES: "+ n.guid);
+            zk.notes.inNotebook(n.guid, resultSpecOptions, function(err, notes) {
+
+                if(notes[0]!=undefined)
+                    io.emit('notes', notes[0].notebookGuid, notes);
+
+                for(var j=0; j<notes.length; j++) {
+                    var note = notes[j];
+                    zk.notes.single(note.guid, function(err, data) {
+
+                        io.emit('note', data);
+
+        //                console.log(notes);
+                    });
+
+                }
+
+//                console.log(notes);
+            });
+        }
+    });
+
     res.sendFile(__dirname + '/home.html');
 
     console.log();
@@ -105,11 +170,6 @@ routes_oauth = function(req, res) {
       console.log("Token: " + oauthToken);
       console.log("TokenSecret: " + oauthTokenSecret);
 
-      fs.writeFile(__dirname + '/session.txt', oauthToken, function (err) {
-          if (err) throw err;
-          console.log('It\'s saved!');
-        });
-
       // redirect the user to authorize the token
       res.redirect(client.getAuthorizeUrl(oauthToken));
     }
@@ -118,7 +178,6 @@ routes_oauth = function(req, res) {
 };
 
 // OAuth callback
-var sessionDebug;
 routes_oauth_callback = function(req, res) {
   var client = new Evernote.Client({
     consumerKey: config.API_CONSUMER_KEY,
@@ -145,8 +204,12 @@ routes_oauth_callback = function(req, res) {
         req.session.edamNoteStoreUrl = results.edam_noteStoreUrl;
         req.session.edamWebApiUrlPrefix = results.edam_webApiUrlPrefix;
 
-        sessionDebug = req.session;
-        console.log(sessionDebug);
+        console.log("AccessToken: " + oauthAccessToken);
+
+        fs.writeFile(__dirname + '/session.txt', oauthAccessToken, function (err) {
+          if (err) throw err;
+          console.log('It\'s saved!');
+        });
 
         res.redirect('/');
       }
@@ -172,3 +235,43 @@ app.get('/oauth_callback', routes_oauth_callback);
 app.get('/clear', routes_clear);
 app.get('/session', routes_session);
 
+
+// funky shit
+////var token = 'S=s1:U=8fb32:E=1507c192db2:C=14924680060:P=185:A=houbenkristof-7667:V=2:H=a31d970fdb300d9f8fdde52b4c7eaef0';
+//var token = 'S=s1:U=8fb28:E=1507c23fb2b:C=1492472ce00:P=185:A=houbenkristof-7667:V=2:H=8ce18b0bf36bb90eeab8cc9b518d537d';
+//
+//var client = new Evernote.Client({
+//      token: token,
+//      sandbox: config.SANDBOX
+//    });
+////
+////var noteStore = client.getNoteStore();
+////noteStore.listNotebooks(function(err, notebooks){
+////    if(notebooks == undefined) return;
+////
+////    console.log("NOTEBOOKS " + notebooks.length);
+////    console.log(notebooks[0]);
+////
+////  for(var i=0; i<notebooks.length; i++) {
+////      var n = notebooks[i];
+////      console.log(n.name);
+////      console.log(n.guid);
+////
+////      var filter = new Evernote.NoteFilter();
+////      filter.ascending = true;
+////      filter.notebookGuid = n.guid;
+////
+////      var rspec = new Evernote.NotesMetadataResultSpec();
+////      rspec.includeTitle = true;
+////      rspec.includeNotebookGuid = true;
+////
+////      noteStore.findNotesMetadata(authTokenEvernote, filter, 0, 100, rspec, function (notes) {
+////		var data = {};
+////		data.id = JSON.stringify(notes);
+////		console.log(data);
+////	  },function (error) {
+////	    console.log('Error- ' + JSON.stringify(error));
+////	  });
+////  }
+////
+////});
